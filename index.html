@@ -1,132 +1,131 @@
 <!DOCTYPE html>
-<html lang="zh-Hant">
+<html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>英文單字卡庫 - AI 輔助版</title>
+    <title>AI 英文單字卡</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body { font-family: 'Inter', 'Microsoft JhengHei', sans-serif; }
-        .glass-morphism {
-            background: rgba(255, 255, 255, 0.9);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+        .word-card { 
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid #f0f0f0;
         }
-        .card-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 1.5rem;
+        .word-card:hover { 
+            transform: translateY(-4px); 
+            box-shadow: 0 10px 20px -5px rgba(0, 0, 0, 0.05);
         }
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
+        .loading-spinner { 
+            border: 3px solid #f3f3f3; 
+            border-top: 3px solid #3498db; 
+            border-radius: 50%; 
+            width: 20px; 
+            height: 20px; 
+            animation: spin 1s linear infinite; 
         }
-        .animate-spin-slow {
-            animation: spin 1s linear infinite;
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        /* 隱藏滾動條但保持功能 */
+        body::-webkit-scrollbar { display: none; }
+        body { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* Modal 動畫與層級修正 */
+        #edit-modal.flex {
+            display: flex !important;
+        }
+        .modal-content {
+            animation: modalAppear 0.2s ease-out forwards;
+        }
+        @keyframes modalAppear {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
         }
     </style>
 </head>
-<body class="bg-slate-50 min-h-screen">
+<body class="bg-slate-50 min-h-screen font-sans">
 
-    <!-- 登入遮罩層 -->
-    <div id="auth-overlay" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 p-4 transition-opacity duration-300">
-        <div class="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl text-center">
-            <div class="mb-6">
-                <div class="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <!-- 修復後的 SVG 圖示 -->
-                    <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
-                    </svg>
-                </div>
-                <h1 class="text-2xl font-bold text-gray-900">歡迎使用單字卡</h1>
-                <p class="text-gray-500 mt-2">請使用 Google 帳號登入</p>
+    <!-- 登入介面 -->
+    <div id="login-screen" class="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center p-4">
+        <div class="max-w-md w-full text-center space-y-8">
+            <div class="space-y-2">
+                <i class="fa-solid fa-book-open text-6xl text-blue-600"></i>
+                <h1 class="text-3xl font-bold text-gray-900">AI 英文單字卡</h1>
+                <p class="text-gray-500">請登入以開始管理您的專屬單字庫</p>
             </div>
-            <button id="btn-login" class="w-full flex items-center justify-center gap-3 bg-white border border-gray-300 text-gray-700 font-semibold py-3 px-4 rounded-lg hover:bg-gray-50 transition-colors shadow-sm">
-                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" class="w-5 h-5">
+            <button id="google-login-btn" class="w-full flex items-center justify-center gap-3 bg-white border border-gray-300 py-3 px-4 rounded-xl shadow-sm hover:bg-gray-50 transition-all font-medium text-gray-700">
+                <img src="https://www.gstatic.com/images/branding/product/1x/gsa_512dp.png" class="w-6 h-6" alt="Google">
                 使用 Google 帳號登入
             </button>
-            <p id="auth-status" class="mt-4 text-sm text-red-500 hidden"></p>
         </div>
     </div>
 
-    <!-- 主應用程式 -->
-    <div id="app" class="hidden">
-        <nav class="bg-white shadow-sm sticky top-0 z-40">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                    <span class="text-xl font-bold text-blue-600">Vocabulary Card</span>
+    <!-- 編輯對話框 (Modal) -->
+    <div id="edit-modal" class="fixed inset-0 bg-black/60 z-[100] hidden items-center justify-center p-4 backdrop-blur-md">
+        <div class="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl modal-content">
+            <h2 class="text-xl font-bold mb-4 text-gray-800">編輯單字內容</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-500 mb-1">英文單字</label>
+                    <input type="text" id="edit-word-input" class="w-full p-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all">
                 </div>
-                <div class="flex items-center gap-4">
-                    <div id="api-indicator" class="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full text-[10px] text-gray-500">
-                        <span class="w-2 h-2 rounded-full bg-red-400" id="api-status-dot"></span>
-                        <span id="api-status-text">Key 未載入</span>
-                    </div>
-                    <span id="user-name" class="text-sm font-medium text-gray-700 hidden sm:block"></span>
-                    <button id="btn-logout" class="text-sm text-gray-500 hover:text-red-600 font-medium px-3 py-1 rounded-md hover:bg-red-50 transition-colors">登出</button>
+                <div>
+                    <label class="block text-sm font-medium text-gray-500 mb-1">中文解釋</label>
+                    <input type="text" id="edit-def-input" class="w-full p-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+                </div>
+            </div>
+            <div class="mt-6 flex gap-3">
+                <button id="cancel-edit-btn" class="flex-1 py-3 text-gray-500 font-medium hover:bg-gray-50 rounded-xl transition-all">取消</button>
+                <button id="confirm-edit-btn" class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 shadow-md shadow-blue-100 transition-all">儲存修改</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主畫面 -->
+    <div id="main-screen" class="hidden pb-20">
+        <nav class="bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-40">
+            <div class="max-w-4xl mx-auto px-6 py-4 flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-brain text-blue-600 text-2xl"></i>
+                    <span class="font-bold text-xl text-gray-800 tracking-tight">My Vocab AI</span>
+                </div>
+                <div class="flex items-center gap-6">
+                    <span id="user-name" class="text-sm font-medium text-gray-600 hidden sm:inline"></span>
+                    <button id="logout-btn" class="text-sm text-gray-400 hover:text-red-500 transition-colors">登出</button>
                 </div>
             </div>
         </nav>
 
-        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
-                <h2 class="text-lg font-semibold text-gray-900 mb-4">新增單字卡</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
-                    <div class="lg:col-span-1">
-                        <label class="block text-xs font-medium text-gray-500 uppercase mb-1">英文單字</label>
-                        <input type="text" id="input-word" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="例如: persistent">
-                    </div>
-                    <div class="lg:col-span-1">
-                        <label class="block text-xs font-medium text-gray-500 uppercase mb-1">中文翻譯</label>
-                        <div class="relative">
-                            <input type="text" id="input-translate" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none pr-10" placeholder="例如: 堅持不懈的">
-                            <button id="btn-ai-assist" class="absolute right-2 top-1/2 -translate-y-1/2 text-purple-500 hover:text-purple-700 p-1 rounded-md transition-colors" title="AI 輔助翻譯">
-                                <svg id="ai-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="lg:col-span-2 flex gap-2">
-                        <button id="btn-save" class="flex-1 bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors shadow-sm">儲存卡片</button>
-                        <button id="btn-clear" class="bg-gray-100 text-gray-600 font-semibold py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors">清除</button>
+        <main class="max-w-4xl mx-auto px-6 py-10">
+            <!-- 新增單字區塊 -->
+            <section class="bg-white p-6 rounded-[1.5rem] shadow-sm mb-10 border border-gray-100">
+                <h2 class="text-lg font-bold mb-4 text-gray-800">新增學習項目</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <input type="text" id="word-input" placeholder="輸入英文單字" class="w-full p-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+                    <div class="flex gap-3">
+                        <input type="text" id="def-input" placeholder="中文解釋" class="flex-1 p-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+                        <button id="ai-assist-btn" title="AI 輔助填寫" class="w-12 bg-purple-50 text-purple-600 rounded-xl hover:bg-purple-100 transition-all flex items-center justify-center shadow-sm">
+                            <i class="fa-solid fa-wand-sparkles text-lg" id="ai-icon"></i>
+                            <div id="ai-loading" class="loading-spinner hidden"></div>
+                        </button>
                     </div>
                 </div>
-                <p id="ai-loading-text" class="text-[10px] text-purple-600 mt-2 hidden animate-pulse">AI 正在思考最適合的中文意思...</p>
-            </div>
+                <div class="mt-4 flex gap-3">
+                    <button id="save-word-btn" class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 shadow-md shadow-blue-100 transition-all">儲存到字庫</button>
+                    <button id="clear-input-btn" class="px-6 py-3 text-gray-400 font-medium hover:text-gray-600 transition-all">清除</button>
+                </div>
+            </section>
 
-            <h2 class="text-xl font-bold text-gray-900 mb-6">我的單字庫 (<span id="card-count">0</span>)</h2>
-            <div id="cards-container" class="card-grid"></div>
+            <!-- 單字列表 -->
+            <div id="word-list" class="grid grid-cols-1 sm:grid-cols-2 gap-4"></div>
         </main>
-    </div>
-
-    <!-- 訊息提示 -->
-    <div id="message-box" class="fixed bottom-4 right-4 z-50 transform translate-y-20 transition-transform duration-300">
-        <div id="message-content" class="bg-gray-900 text-white px-6 py-3 rounded-xl shadow-lg"></div>
-    </div>
-
-    <!-- 編輯 Modal -->
-    <div id="edit-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-900/50 p-4">
-        <div class="bg-white rounded-xl p-6 max-w-md w-full shadow-xl">
-            <h3 class="text-lg font-bold text-gray-900 mb-4">編輯單字</h3>
-            <div class="space-y-4">
-                <input type="text" id="edit-word" class="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500" placeholder="英文單字">
-                <input type="text" id="edit-translate" class="w-full border border-gray-300 rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500" placeholder="中文翻譯">
-            </div>
-            <div class="mt-6 flex justify-end gap-3">
-                <button id="btn-edit-cancel" class="px-4 py-2 text-gray-600 font-medium hover:bg-gray-100 rounded-lg">取消</button>
-                <button id="btn-edit-save" class="px-4 py-2 bg-blue-600 text-white font-medium hover:bg-blue-700 rounded-lg">更新</button>
-            </div>
-        </div>
     </div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, doc, getDoc, addDoc, updateDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, collection, onSnapshot, addDoc, deleteDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // ==========================================
-        // 1. Firebase 配置
-        // ==========================================
-        const myCustomConfig = {
+        const firebaseConfig = {
           apiKey: "AIzaSyBnjG3WdfIj_jZkyzX9ROFltoa5zss0HY4",
           authDomain: "test-firestore-71e16.firebaseapp.com",
           projectId: "test-firestore-71e16",
@@ -135,269 +134,213 @@
           appId: "1:817781507456:web:0b0ce00e69c9d777c8ed65"
         };
 
-        const firebaseConfig = (myCustomConfig.apiKey !== "my key") 
-            ? myCustomConfig 
-            : JSON.parse(__firebase_config);
-
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'my-vocab-app';
-        
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
         const provider = new GoogleAuthProvider();
+        const appId = 'my-vocab-app'; 
 
-        // ==========================================
-        // 2. Gemini API 狀態
-        // ==========================================
-        let geminiApiKey = ""; // 預設為空，登入後會自動讀取
-
-        // UI 變數
-        const authOverlay = document.getElementById('auth-overlay');
-        const mainApp = document.getElementById('app');
-        const btnLogin = document.getElementById('btn-login');
-        const btnLogout = document.getElementById('btn-logout');
-        const userNameDisplay = document.getElementById('user-name');
-        const authStatus = document.getElementById('auth-status');
-        const cardsContainer = document.getElementById('cards-container');
-        const inputWord = document.getElementById('input-word');
-        const inputTranslate = document.getElementById('input-translate');
-        const btnAiAssist = document.getElementById('btn-ai-assist');
-        const aiIcon = document.getElementById('ai-icon');
-        const aiLoadingText = document.getElementById('ai-loading-text');
-        const editModal = document.getElementById('edit-modal');
-        const apiStatusDot = document.getElementById('api-status-dot');
-        const apiStatusText = document.getElementById('api-status-text');
-        
         let currentUser = null;
-        let unsubscribe = null;
-        let editingId = null;
+        let geminiApiKey = "";
+        let currentEditId = null;
 
-        function showMessage(text) {
-            const msgBox = document.getElementById('message-box');
-            const msgContent = document.getElementById('message-content');
-            msgContent.innerText = text;
-            msgBox.classList.remove('translate-y-20');
-            setTimeout(() => msgBox.classList.add('translate-y-20'), 3000);
-        }
+        const loginScreen = document.getElementById('login-screen');
+        const mainScreen = document.getElementById('main-screen');
+        const loginBtn = document.getElementById('google-login-btn');
+        const logoutBtn = document.getElementById('logout-btn');
+        const wordInput = document.getElementById('word-input');
+        const defInput = document.getElementById('def-input');
+        const aiAssistBtn = document.getElementById('ai-assist-btn');
+        const saveWordBtn = document.getElementById('save-word-btn');
+        const clearBtn = document.getElementById('clear-input-btn');
+        const wordListContainer = document.getElementById('word-list');
+        
+        const editModal = document.getElementById('edit-modal');
+        const editWordInput = document.getElementById('edit-word-input');
+        const editDefInput = document.getElementById('edit-def-input');
+        const cancelEditBtn = document.getElementById('cancel-edit-btn');
+        const confirmEditBtn = document.getElementById('confirm-edit-btn');
 
-        // 從 Firestore 讀取 API Key 的函式
-        async function fetchGeminiApiKey() {
-            try {
-                // 根據 Rule 1 規範的路徑：/artifacts/{appId}/public/data/api 文件: gemini
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'api', 'gemini');
-                const docSnap = await getDoc(docRef);
+        loginBtn.onclick = async () => {
+            try { await signInWithPopup(auth, provider); } 
+            catch (error) { alert("登入失敗: " + error.message); }
+        };
 
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    if (data.key) {
-                        geminiApiKey = data.key;
-                        apiStatusDot.classList.replace('bg-red-400', 'bg-green-400');
-                        apiStatusText.innerText = "Key 已載入";
-                        console.log("Gemini API Key 載入成功");
-                    } else {
-                        throw new Error("文件內找不到 'key' 欄位");
-                    }
-                } else {
-                    throw new Error("找不到 API Key 文件");
-                }
-            } catch (error) {
-                console.error("API Key 載入失敗:", error);
-                apiStatusText.innerText = "Key 載入失敗";
-                showMessage("無法讀取 AI 金鑰，請檢查資料庫設定");
-            }
-        }
+        logoutBtn.onclick = () => signOut(auth);
 
         onAuthStateChanged(auth, async (user) => {
-            currentUser = user;
             if (user) {
-                authOverlay.classList.add('hidden');
-                mainApp.classList.remove('hidden');
-                userNameDisplay.innerText = user.displayName;
-                userNameDisplay.classList.remove('hidden');
-                
-                // 登入後第一件事：去資料庫抓 API Key
-                await fetchGeminiApiKey();
-                
-                initData(user.uid);
+                currentUser = user;
+                loginScreen.classList.add('hidden');
+                mainScreen.classList.remove('hidden');
+                document.getElementById('user-name').innerText = user.displayName;
+                fetchApiKey();
+                initWordListener();
             } else {
-                authOverlay.classList.remove('hidden');
-                mainApp.classList.add('hidden');
-                geminiApiKey = ""; // 登出清空金鑰
-                if (unsubscribe) unsubscribe();
+                currentUser = null;
+                loginScreen.classList.remove('hidden');
+                mainScreen.classList.add('hidden');
+                wordListContainer.innerHTML = '';
             }
         });
 
-        btnLogin.addEventListener('click', async () => {
+        async function fetchApiKey() {
             try {
-                await signInWithPopup(auth, provider);
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'api', 'gemini');
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) { geminiApiKey = docSnap.data().key; }
+            } catch (error) { console.error("Error fetching API key:", error); }
+        }
+
+        function initWordListener() {
+            if (!currentUser) return;
+            const cardsCol = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'cards');
+            onSnapshot(cardsCol, (snapshot) => {
+                wordListContainer.innerHTML = '';
+                const cards = [];
+                snapshot.forEach(doc => { 
+                    const data = doc.data();
+                    cards.push({ id: doc.id, ...data }); 
+                });
+                
+                cards.sort((a, b) => {
+                    const timeA = a.time?.seconds ? a.time.seconds * 1000 : (Number(a.time) || 0);
+                    const timeB = b.time?.seconds ? b.time.seconds * 1000 : (Number(b.time) || 0);
+                    return timeB - timeA;
+                });
+                
+                cards.forEach(renderWordCard);
+            }, (error) => console.error("Listener error:", error));
+        }
+
+        saveWordBtn.onclick = async () => {
+            const word = wordInput.value.trim();
+            const translate = defInput.value.trim();
+            if (!word || !translate) return alert("請填寫單字與翻譯");
+            try {
+                const cardsCol = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'cards');
+                await addDoc(cardsCol, { 
+                    word, 
+                    translate, 
+                    time: serverTimestamp() 
+                });
+                wordInput.value = ''; defInput.value = '';
+            } catch (error) { console.error(error); }
+        };
+
+        clearBtn.onclick = () => { wordInput.value = ''; defInput.value = ''; };
+
+        // 修正：確保 Modal 顯示為 flex 並移除 hidden
+        window.openEditModal = (id, word, translate) => {
+            currentEditId = id;
+            editWordInput.value = word;
+            editDefInput.value = translate;
+            editModal.classList.remove('hidden');
+            editModal.classList.add('flex');
+        };
+
+        // 修正：關閉 Modal 時正確切換 Class
+        cancelEditBtn.onclick = () => {
+            editModal.classList.add('hidden');
+            editModal.classList.remove('flex');
+            currentEditId = null;
+        };
+
+        confirmEditBtn.onclick = async () => {
+            if (!currentEditId || !currentUser) return;
+            const newWord = editWordInput.value.trim();
+            const newDef = editDefInput.value.trim();
+            if (!newWord || !newDef) return alert("欄位不可為空");
+
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'cards', currentEditId);
+                await updateDoc(docRef, {
+                    word: newWord,
+                    translate: newDef
+                });
+                cancelEditBtn.onclick();
             } catch (error) {
-                authStatus.innerText = "登入失敗: " + error.message;
-                authStatus.classList.remove('hidden');
+                console.error("Update failed:", error);
+                alert("儲存失敗");
             }
-        });
+        };
 
-        btnLogout.addEventListener('click', () => signOut(auth));
+        window.deleteWord = async (id) => {
+            if (!confirm("確定要刪除這張單字卡嗎？")) return;
+            await deleteDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'cards', id));
+        };
 
-        // AI 翻譯功能
-        async function fetchAiTranslation(word) {
-            if (!geminiApiKey) {
-                throw new Error('尚未載入 API Key，請重新整理頁面或檢查資料庫');
-            }
-
-            const systemPrompt = "你是一位專業的英文老師。請為給定的英文單字提供一個『最常用且簡短』的中文意思（繁體中文）。只需要回傳中文翻譯字詞本身，不要有額外的解釋或標點符號，如果有拼字錯誤，請用括號註記這個字可能有錯，應該是怎麼拼。";
-            const userQuery = `請翻譯單字：${word}`;
-            
-            const modelId = "gemini-2.5-flash-latest"; 
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${geminiApiKey}`;
-            
-            const callApi = async () => {
-                const response = await fetch(url, {
+        aiAssistBtn.onclick = async () => {
+            const word = wordInput.value.trim();
+            if (!word || !geminiApiKey) return alert("請輸入單字或檢查 API 配置");
+            setAILoading(true);
+            try {
+                const systemPrompt = `你是一個英文老師，請回傳 "${word}" 英文字「常用又簡短」的繁體中文意思，不需要過多的解釋或標點符號，如果有拼字錯誤，除了產生中文解釋，也用括號的方式表示 ( 可能拼錯字，應該是 ... )。`;
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: userQuery }] }],
-                        systemInstruction: { parts: [{ text: systemPrompt }] }
-                    })
+                    body: JSON.stringify({ contents: [{ parts: [{ text: systemPrompt }] }] })
                 });
-                
-                if (response.status === 403) {
-                    throw new Error('API Key 無效或無權限訪問');
-                }
-                
-                if (!response.ok) throw new Error('AI 服務暫時繁忙');
-                const result = await response.json();
-                return result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-            };
-
-            // 指數退避重試邏輯
-            let retries = 0;
-            const maxRetries = 3;
-            while (retries <= maxRetries) {
-                try {
-                    return await callApi();
-                } catch (error) {
-                    if (retries === maxRetries || error.message.includes('Key')) throw error;
-                    const delay = Math.pow(2, retries) * 1000;
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                    retries++;
-                }
-            }
-        }
-
-        btnAiAssist.onclick = async () => {
-            const word = inputWord.value.trim();
-            if (!word) {
-                showMessage("請先輸入英文單字");
-                return;
-            }
-
-            btnAiAssist.disabled = true;
-            aiIcon.classList.add('animate-spin-slow');
-            aiLoadingText.classList.remove('hidden');
-
-            try {
-                const translation = await fetchAiTranslation(word);
-                if (translation) {
-                    inputTranslate.value = translation;
-                    showMessage("AI 已填入建議翻譯");
-                } else {
-                    showMessage("AI 無法找到建議");
-                }
-            } catch (error) {
-                console.error(error);
-                showMessage(error.message);
-            } finally {
-                btnAiAssist.disabled = false;
-                aiIcon.classList.remove('animate-spin-slow');
-                aiLoadingText.classList.add('hidden');
-            }
+                const data = await response.json();
+                const aiResult = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+                if (aiResult) defInput.value = aiResult;
+            } catch (error) { console.error(error); } finally { setAILoading(false); }
         };
 
-        function initData(userId) {
-            const colRef = collection(db, 'artifacts', appId, 'users', userId, 'cards');
-            unsubscribe = onSnapshot(colRef, (snapshot) => {
-                const cards = [];
-                snapshot.forEach(doc => cards.push({ id: doc.id, ...doc.data() }));
-                cards.sort((a, b) => (b.time || 0) - (a.time || 0));
-                render(cards);
-                document.getElementById('card-count').innerText = cards.length;
-            }, (err) => showMessage("讀取失敗: " + err.message));
+        function setAILoading(isLoading) {
+            document.getElementById('ai-icon').classList.toggle('hidden', isLoading);
+            document.getElementById('ai-loading').classList.toggle('hidden', !isLoading);
+            aiAssistBtn.disabled = isLoading;
         }
 
-        function render(cards) {
-            cardsContainer.innerHTML = cards.length ? '' : '<p class="col-span-full text-center text-gray-400 py-10">尚無單字卡</p>';
-            cards.forEach(card => {
-                const div = document.createElement('div');
-                div.className = "glass-morphism rounded-xl p-5 border border-gray-100 group flex flex-col justify-between";
-                const dictLink = `https://dictionary.cambridge.org/zht/%E8%A9%9E%E5%85%B8/%E8%8B%B1%E8%AA%9E-%E6%BC%A2%E8%AA%9E-%E7%B9%81%E9%AB%94/${encodeURIComponent(card.word)}`;
-                
-                div.innerHTML = `
-                    <div>
-                        <div class="flex justify-between items-start mb-2">
-                            <h3 class="text-xl font-bold text-blue-700">${card.word}</h3>
-                            <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button class="text-blue-500 hover:text-blue-700 btn-edit" data-id="${card.id}">編輯</button>
-                                <button class="text-red-500 hover:text-red-700 btn-del" data-id="${card.id}">刪除</button>
-                            </div>
-                        </div>
-                        <p class="text-gray-600 mb-4">${card.translate}</p>
-                    </div>
-                    <div class="pt-4 border-t flex justify-between items-center">
-                        <a href="${dictLink}" target="_blank" class="text-xs text-blue-500 font-bold hover:underline">劍橋辭典 ↗</a>
-                        <span class="text-[10px] text-gray-400">${new Date(card.time).toLocaleDateString()}</span>
-                    </div>
-                `;
-                
-                div.querySelector('.btn-del').onclick = () => deleteCard(card.id);
-                div.querySelector('.btn-edit').onclick = () => {
-                    editingId = card.id;
-                    document.getElementById('edit-word').value = card.word;
-                    document.getElementById('edit-translate').value = card.translate;
-                    editModal.classList.remove('hidden');
-                };
-                cardsContainer.appendChild(div);
-            });
-        }
-
-        document.getElementById('btn-save').onclick = async () => {
-            const word = inputWord.value.trim();
-            const translate = inputTranslate.value.trim();
-            if (!word || !translate || !currentUser) return showMessage("請輸入完整內容");
-            
-            try {
-                await addDoc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'cards'), {
-                    word, translate, time: Date.now()
-                });
-                inputWord.value = ''; inputTranslate.value = '';
-                showMessage("儲存成功");
-            } catch (e) { showMessage("儲存失敗"); }
+        window.speak = (text) => {
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'en-US';
+            utterance.rate = 0.85;
+            window.speechSynthesis.speak(utterance);
         };
 
-        async function deleteCard(id) {
-            if (confirm("確定刪除？")) {
-                await deleteDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'cards', id));
-                showMessage("已刪除");
+        function renderWordCard(data) {
+            const card = document.createElement('div');
+            card.className = "word-card bg-white p-6 rounded-[1.2rem] flex flex-col relative";
+            const cambridgeUrl = `https://dictionary.cambridge.org/zht/%E8%A9%9E%E5%85%B8/%E8%8B%B1%E8%AA%9E-%E6%BC%A2%E8%AA%9E-%E7%B9%81%E9%AB%94/${encodeURIComponent(data.word)}`;
+            let dateString = "---";
+            if (data.time) {
+                const dateObj = data.time.toDate ? data.time.toDate() : new Date(Number(data.time));
+                dateString = `${dateObj.getFullYear()}/${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
             }
+            const safeWord = data.word.replace(/'/g, "\\'");
+            const safeTranslate = data.translate.replace(/'/g, "\\'");
+
+            card.innerHTML = `
+                <div class="absolute top-4 right-4 flex gap-3">
+                    <button onclick="openEditModal('${data.id}', '${safeWord}', '${safeTranslate}')" class="text-gray-300 hover:text-blue-500 transition-colors">
+                        <i class="fa-solid fa-pen text-xs"></i>
+                    </button>
+                    <button onclick="deleteWord('${data.id}')" class="text-gray-300 hover:text-red-400 transition-colors">
+                        <i class="fa-solid fa-xmark text-sm"></i>
+                    </button>
+                </div>
+                <div class="mb-2">
+                    <h3 class="text-2xl font-bold text-[#3056D3] leading-tight cursor-pointer inline-block" onclick="speak('${safeWord}')">
+                        ${data.word}
+                    </h3>
+                </div>
+                <div class="mb-6">
+                    <p class="text-lg font-medium text-gray-600">${data.translate}</p>
+                </div>
+                <div class="mt-auto pt-4 border-t border-gray-100 flex justify-between items-center">
+                    <a href="${cambridgeUrl}" target="_blank" class="text-[#4A90E2] text-sm font-semibold hover:underline flex items-center gap-1">
+                        劍橋辭典 <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
+                    </a>
+                    <span class="text-xs text-gray-400 font-medium tracking-wide">
+                        ${dateString}
+                    </span>
+                </div>
+            `;
+            wordListContainer.appendChild(card);
         }
-
-        document.getElementById('btn-edit-save').onclick = async () => {
-            const word = document.getElementById('edit-word').value.trim();
-            const translate = document.getElementById('edit-translate').value.trim();
-            if (!word || !translate) return;
-            
-            await updateDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'cards', editingId), {
-                word, translate
-            });
-            editModal.classList.add('hidden');
-            showMessage("已更新");
-        };
-
-        document.getElementById('btn-edit-cancel').onclick = () => editModal.classList.add('hidden');
-        document.getElementById('btn-clear').onclick = () => { 
-            inputWord.value = ''; 
-            inputTranslate.value = ''; 
-        };
-
     </script>
 </body>
 </html>
