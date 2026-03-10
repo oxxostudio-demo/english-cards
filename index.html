@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>英文單字卡庫</title>
+    <title>英文單字卡庫 - AI 輔助版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -34,6 +34,7 @@
         <div class="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl text-center">
             <div class="mb-6">
                 <div class="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <!-- 修復後的 SVG 圖示 -->
                     <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
                     </svg>
@@ -57,6 +58,10 @@
                     <span class="text-xl font-bold text-blue-600">Vocabulary Card</span>
                 </div>
                 <div class="flex items-center gap-4">
+                    <div id="api-indicator" class="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full text-[10px] text-gray-500">
+                        <span class="w-2 h-2 rounded-full bg-red-400" id="api-status-dot"></span>
+                        <span id="api-status-text">Key 未載入</span>
+                    </div>
                     <span id="user-name" class="text-sm font-medium text-gray-700 hidden sm:block"></span>
                     <button id="btn-logout" class="text-sm text-gray-500 hover:text-red-600 font-medium px-3 py-1 rounded-md hover:bg-red-50 transition-colors">登出</button>
                 </div>
@@ -116,7 +121,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, doc, getDoc, addDoc, updateDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // ==========================================
         // 1. Firebase 配置
@@ -142,9 +147,9 @@
         const provider = new GoogleAuthProvider();
 
         // ==========================================
-        // 2. Gemini API 配置 (如果您在本地運行，請在此填入您的 API Key)
+        // 2. Gemini API 狀態
         // ==========================================
-        const apiKey = "my key"; 
+        let geminiApiKey = ""; // 預設為空，登入後會自動讀取
 
         // UI 變數
         const authOverlay = document.getElementById('auth-overlay');
@@ -160,6 +165,8 @@
         const aiIcon = document.getElementById('ai-icon');
         const aiLoadingText = document.getElementById('ai-loading-text');
         const editModal = document.getElementById('edit-modal');
+        const apiStatusDot = document.getElementById('api-status-dot');
+        const apiStatusText = document.getElementById('api-status-text');
         
         let currentUser = null;
         let unsubscribe = null;
@@ -173,17 +180,49 @@
             setTimeout(() => msgBox.classList.add('translate-y-20'), 3000);
         }
 
-        onAuthStateChanged(auth, (user) => {
+        // 從 Firestore 讀取 API Key 的函式
+        async function fetchGeminiApiKey() {
+            try {
+                // 根據 Rule 1 規範的路徑：/artifacts/{appId}/public/data/api 文件: gemini
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'api', 'gemini');
+                const docSnap = await getDoc(docRef);
+
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    if (data.key) {
+                        geminiApiKey = data.key;
+                        apiStatusDot.classList.replace('bg-red-400', 'bg-green-400');
+                        apiStatusText.innerText = "Key 已載入";
+                        console.log("Gemini API Key 載入成功");
+                    } else {
+                        throw new Error("文件內找不到 'key' 欄位");
+                    }
+                } else {
+                    throw new Error("找不到 API Key 文件");
+                }
+            } catch (error) {
+                console.error("API Key 載入失敗:", error);
+                apiStatusText.innerText = "Key 載入失敗";
+                showMessage("無法讀取 AI 金鑰，請檢查資料庫設定");
+            }
+        }
+
+        onAuthStateChanged(auth, async (user) => {
             currentUser = user;
             if (user) {
                 authOverlay.classList.add('hidden');
                 mainApp.classList.remove('hidden');
                 userNameDisplay.innerText = user.displayName;
                 userNameDisplay.classList.remove('hidden');
+                
+                // 登入後第一件事：去資料庫抓 API Key
+                await fetchGeminiApiKey();
+                
                 initData(user.uid);
             } else {
                 authOverlay.classList.remove('hidden');
                 mainApp.classList.add('hidden');
+                geminiApiKey = ""; // 登出清空金鑰
                 if (unsubscribe) unsubscribe();
             }
         });
@@ -199,14 +238,17 @@
 
         btnLogout.addEventListener('click', () => signOut(auth));
 
-        // AI 翻譯功能 (嚴格遵循 Gemini API 規範)
+        // AI 翻譯功能
         async function fetchAiTranslation(word) {
+            if (!geminiApiKey) {
+                throw new Error('尚未載入 API Key，請重新整理頁面或檢查資料庫');
+            }
+
             const systemPrompt = "你是一位專業的英文老師。請為給定的英文單字提供一個『最常用且簡短』的中文意思（繁體中文）。只需要回傳中文翻譯字詞本身，不要有額外的解釋或標點符號，如果有拼字錯誤，請用括號註記這個字可能有錯，應該是怎麼拼。";
             const userQuery = `請翻譯單字：${word}`;
             
-            // 必須使用指定的模型
             const modelId = "gemini-2.5-flash-latest"; 
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${geminiApiKey}`;
             
             const callApi = async () => {
                 const response = await fetch(url, {
@@ -219,22 +261,22 @@
                 });
                 
                 if (response.status === 403) {
-                    throw new Error('API Key 無效或未提供。如果您在本地執行，請在代碼中設定 apiKey 變數。');
+                    throw new Error('API Key 無效或無權限訪問');
                 }
                 
-                if (!response.ok) throw new Error('API 請求失敗');
+                if (!response.ok) throw new Error('AI 服務暫時繁忙');
                 const result = await response.json();
                 return result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
             };
 
-            // 指數退避重試邏輯 (5次重試)
+            // 指數退避重試邏輯
             let retries = 0;
-            const maxRetries = 5;
+            const maxRetries = 3;
             while (retries <= maxRetries) {
                 try {
                     return await callApi();
                 } catch (error) {
-                    if (retries === maxRetries || error.message.includes('API Key')) throw error;
+                    if (retries === maxRetries || error.message.includes('Key')) throw error;
                     const delay = Math.pow(2, retries) * 1000;
                     await new Promise(resolve => setTimeout(resolve, delay));
                     retries++;
@@ -263,7 +305,7 @@
                 }
             } catch (error) {
                 console.error(error);
-                showMessage(error.message || "AI 暫時無法使用");
+                showMessage(error.message);
             } finally {
                 btnAiAssist.disabled = false;
                 aiIcon.classList.remove('animate-spin-slow');
